@@ -54,13 +54,6 @@ const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
 const app = document.querySelector<HTMLDivElement>("#app");
 
 // --- Global state (needed for functions outside app block) ---
-let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
-let currentIndex = 0;
-let currentRound = 1;
-let isResting = false;
-let timerId: number | undefined;
-
-let _lastDuration: 15 | 25 | 40 = 15;
 let lastConstraints = { noFloor: false, lowNoise: false };
 let lastSession: ReturnType<typeof generateWorkoutSession> | null = null;
 
@@ -71,10 +64,6 @@ const recoveryMessages = [
   "This is how consistency survives.",
   "Fallback used. Mission complete.",
 ];
-
-const _getRecoveryMessage = () => {
-  return recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
-};
 
 const showPreview = (name: string) => {
   const data = EX_PREVIEW[name];
@@ -409,7 +398,7 @@ let isResting = false;
   const runSession = (duration: 15 | 25 | 40) => {
     const appContainer = document.querySelector(".app");
     appContainer?.classList.add("in-workout");
-    lastDuration = duration;
+    // lastDuration = duration;
     lastConstraints = {
       noFloor: noFloor.checked,
       lowNoise: lowNoise.checked,
