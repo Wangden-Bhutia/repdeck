@@ -733,28 +733,3 @@ const showAbout = () => {
   });
   (overlay.querySelector("#closeAbout") as HTMLButtonElement).onclick = close;
 };
-  const bindCompletionActions = () => {
-    const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement;
-    const newBtn = document.getElementById("newBtn") as HTMLButtonElement;
-
-    restartBtn?.addEventListener("click", () => {
-      if (!lastSession) return;
-
-      currentSession = lastSession;
-      currentIndex = 0;
-      currentRound = 1;
-      isResting = false;
-
-      if (timerId) {
-        clearInterval(timerId);
-        timerId = undefined;
-      }
-
-      renderCurrent();
-    });
-
-    newBtn?.addEventListener("click", () => {
-      // reset UI completely for a fresh start
-      window.location.reload();
-    });
-  };
