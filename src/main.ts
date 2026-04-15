@@ -107,7 +107,7 @@ const bindCompletionActions = () => {
 
     if (timerId) {
       clearInterval(timerId);
-      timerId = null;
+      timerId = undefined;
     }
 
     renderCurrent();
@@ -429,7 +429,7 @@ if (app) {
     renderCurrent();
   };
 
-  const renderCurrent = () => {
+  function renderCurrent() {
     if (!currentSession) return;
 
     isPaused = false;
@@ -585,7 +585,7 @@ if (app) {
       if (remainingSeconds <= 0) {
         playBeep();
         clearInterval(timerId!);
-        timerId = null;
+        timerId = undefined;
 
         currentIndex++;
 
