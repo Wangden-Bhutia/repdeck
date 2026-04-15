@@ -1,5 +1,27 @@
 
+
 import { generateWorkoutSession } from "./domain/workoutGenerator";
+
+// --- PWA Install Prompt Handling ---
+let deferredPrompt: any;
+let installAvailable = false;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installAvailable = true;
+
+  const btn = document.getElementById("installBtn") as HTMLButtonElement;
+  if (btn) btn.style.opacity = "0.9";
+});
+
+// Expose manual trigger (can be wired to button later)
+(window as any).triggerInstall = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+};
 
 // --- Exercise preview (minimal) ---
 const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
@@ -278,6 +300,16 @@ if (app) {
       <div id="startHint" style="font-size:11px;opacity:0.4;text-align:center;margin-top:-18px;margin-bottom:12px;">
         No setup. Just start.
       </div>
+      <button id="installBtn" style="
+        margin-top:6px;
+        font-size:11px;
+        opacity:0.5;
+        background:none;
+        border:none;
+        color:#aaa;
+      ">
+        Install App
+      </button>
     </div>
 
     <div>
@@ -697,6 +729,13 @@ if (app) {
   });
   btn25.addEventListener("click", () => runSession(25));
   btn40.addEventListener("click", () => runSession(40));
+
+  const installBtn = document.getElementById("installBtn") as HTMLButtonElement;
+
+  installBtn?.addEventListener("click", () => {
+    if (!installAvailable) return;
+    (window as any).triggerInstall?.();
+  });
 }
 
 console.log("RepDeck UI ready");
