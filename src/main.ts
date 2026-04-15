@@ -2,6 +2,13 @@
 
 import { generateWorkoutSession } from "./domain/workoutGenerator";
 
+// --- Global state (fix for TS build) ---
+let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
+let currentIndex = 0;
+let currentRound = 1;
+let isResting = false;
+let timerId: number | null = null;
+
 // --- PWA Install Prompt Handling ---
 let deferredPrompt: any;
 let installAvailable = false;
@@ -52,7 +59,7 @@ const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
-let lastDuration: 15 | 25 | 40 = 15;
+let _lastDuration: 15 | 25 | 40 = 15;
 let lastConstraints = { noFloor: false, lowNoise: false };
 let lastSession: ReturnType<typeof generateWorkoutSession> | null = null;
 
@@ -64,7 +71,7 @@ const recoveryMessages = [
   "Fallback used. Mission complete.",
 ];
 
-const getRecoveryMessage = () => {
+const _getRecoveryMessage = () => {
   return recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
 };
 
