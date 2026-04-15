@@ -313,6 +313,31 @@ let isResting = false;
   let totalSessionSeconds = 0;
   let remainingSessionSeconds = 0;
 
+  const bindCompletionActions = () => {
+    const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement;
+    const newBtn = document.getElementById("newBtn") as HTMLButtonElement;
+
+    restartBtn?.addEventListener("click", () => {
+      if (!lastSession) return;
+
+      currentSession = lastSession;
+      currentIndex = 0;
+      currentRound = 1;
+      isResting = false;
+
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = undefined;
+      }
+
+      renderCurrent();
+    });
+
+    newBtn?.addEventListener("click", () => {
+      window.location.reload();
+    });
+  };
+
   const playBeep = (type: "normal" | "rest" | "start" = "normal") => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
