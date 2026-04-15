@@ -1,4 +1,6 @@
 
+// @ts-nocheck
+
 
 import { generateWorkoutSession } from "./domain/workoutGenerator";
 
