@@ -2,12 +2,6 @@
 
 import { generateWorkoutSession } from "./domain/workoutGenerator";
 
-// --- Global state (fix for TS build) ---
-let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
-let currentIndex = 0;
-let currentRound = 1;
-let isResting = false;
-let timerId: number | null = null;
 
 // --- PWA Install Prompt Handling ---
 let deferredPrompt: any;
@@ -59,7 +53,7 @@ const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
-let _lastDuration: 15 | 25 | 40 = 15;
+let lastDuration: 15 | 25 | 40 = 15;
 let lastConstraints = { noFloor: false, lowNoise: false };
 let lastSession: ReturnType<typeof generateWorkoutSession> | null = null;
 
@@ -71,7 +65,7 @@ const recoveryMessages = [
   "Fallback used. Mission complete.",
 ];
 
-const _getRecoveryMessage = () => {
+const getRecoveryMessage = () => {
   return recoveryMessages[Math.floor(Math.random() * recoveryMessages.length)];
 };
 
@@ -347,7 +341,7 @@ if (app) {
   let currentRound = 1;
   const restSecondsDefault = 15;
   let isResting = false;
-  let timerId: number | null = null;
+  let timerId: number | undefined;
   let remainingSeconds = 0;
   let isPaused = false;
   let difficultyOffset = 0; // +/- seconds adjustment
@@ -428,7 +422,7 @@ if (app) {
     isResting = false;
     if (timerId) {
       clearInterval(timerId);
-      timerId = null;
+      timerId = undefined;
     }
     const hint = document.getElementById("startHint");
     hint?.remove();
@@ -464,7 +458,7 @@ if (app) {
 
       if (timerId) {
         clearInterval(timerId);
-        timerId = null;
+        timerId = undefined;
       }
 
       timerId = window.setInterval(() => {
@@ -499,7 +493,7 @@ if (app) {
         if (remainingSeconds <= 0) {
           playBeep("rest");
           clearInterval(timerId!);
-          timerId = null;
+          timerId = undefined;
           isResting = false;
           renderCurrent();
         }
@@ -641,7 +635,7 @@ if (app) {
     // auto-start timer
     if (timerId) {
       clearInterval(timerId);
-      timerId = null;
+      timerId = undefined;
     }
 
     timerId = window.setInterval(tick, 1000);
@@ -656,7 +650,7 @@ if (app) {
 
       if (!isPaused) {
         clearInterval(timerId);
-        timerId = null;
+        timerId = undefined;
         isPaused = true;
         pauseBtn.textContent = "Resume";
         appContainer?.classList.add("paused");
@@ -680,7 +674,7 @@ if (app) {
       skipsCount++;
       if (timerId) {
         clearInterval(timerId);
-        timerId = null;
+        timerId = undefined;
       }
       currentIndex++;
 
