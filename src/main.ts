@@ -336,11 +336,11 @@ if (app) {
   const aboutTrigger = document.getElementById("aboutTrigger");
   aboutTrigger?.addEventListener("click", () => showAbout());
 
-  let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
-  let currentIndex = 0;
-  let currentRound = 1;
-  const restSecondsDefault = 15;
-  let isResting = false;
+let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
+let currentIndex = 0;
+let currentRound = 1;
+const restSecondsDefault = 15;
+let isResting = false;
   let timerId: number | undefined;
   let remainingSeconds = 0;
   let isPaused = false;
