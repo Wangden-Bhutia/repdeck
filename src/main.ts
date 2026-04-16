@@ -21,10 +21,22 @@ window.addEventListener("beforeinstallprompt", (e) => {
 // Expose manual trigger (can be wired to button later)
 (window as any).triggerInstall = async () => {
   if (!deferredPrompt) return;
+
   deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
+  const choice = await deferredPrompt.userChoice;
   deferredPrompt = null;
+
+  if (choice?.outcome === "accepted") {
+    const btn = document.getElementById("installBtn") as HTMLButtonElement;
+    if (btn) btn.remove();
+  }
 };
+
+// Remove install button after app is installed
+window.addEventListener("appinstalled", () => {
+  const btn = document.getElementById("installBtn") as HTMLButtonElement;
+  if (btn) btn.remove();
+});
 
 // --- Exercise preview (minimal) ---
 const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
