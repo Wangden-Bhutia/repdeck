@@ -116,7 +116,7 @@ const showPreview = (name: string) => {
 
 if (app) {
   app.innerHTML = `
-  <div class="app" style="display:flex;flex-direction:column;justify-content:space-between;height:80vh;">
+  <div class="app" style="display:flex;flex-direction:column;justify-content:space-between;min-height:100vh;padding:16px 12px;">
 <style>
 @keyframes pulse {
   0% { transform: scale(1); box-shadow: 0 0 0 rgba(229,57,53,0.15); }
