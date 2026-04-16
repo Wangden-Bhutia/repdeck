@@ -41,6 +41,14 @@ window.addEventListener("beforeinstallprompt", (e) => {
   }
 };
 
+// --- Preload exercise images for instant display ---
+function preloadExerciseImages() {
+  Object.values(EX_PREVIEW).forEach(({ img }) => {
+    const image = new Image();
+    image.src = img;
+  });
+}
+
 // Remove install button after app is installed
 window.addEventListener("appinstalled", () => {
   const btn = document.getElementById("installBtn") as HTMLButtonElement;
@@ -752,6 +760,7 @@ let isResting = false;
 }
 
 console.log("RepDeck UI ready");
+preloadExerciseImages();
 // About screen renderer
 const showAbout = () => {
   const output = document.getElementById("output") as HTMLDivElement;
