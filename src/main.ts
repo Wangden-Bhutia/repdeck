@@ -8,6 +8,15 @@ import { generateWorkoutSession } from "./domain/workoutGenerator";
 // --- PWA Install Prompt Handling ---
 let deferredPrompt: any;
 let installAvailable = false;
+// Detect if app is already installed (standalone mode)
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+
+if (isStandalone) {
+  window.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("installBtn") as HTMLButtonElement;
+    if (btn) btn.remove();
+  });
+}
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
@@ -40,29 +49,29 @@ window.addEventListener("appinstalled", () => {
 
 // --- Exercise preview (minimal) ---
 const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
-  "Push-ups": { img: "/src/assets/exercises/pushups.png", cue: "Body straight, elbows ~45°" },
-  "Incline Push-ups": { img: "/src/assets/exercises/incline_pushups.png", cue: "Hands elevated, keep core tight" },
-  "Wall Push-ups": { img: "/src/assets/exercises/wall_pushups.png", cue: "Straight line, slow control" },
-  "Pike Push-ups": { img: "/src/assets/exercises/pike_pushups.png", cue: "Hips high, head toward floor" },
-  "Squats": { img: "/src/assets/exercises/squats.png", cue: "Chest up, hips back" },
-  "Reverse Lunges": { img: "/src/assets/exercises/reverse_lunges.png", cue: "Step back, front knee stable" },
-  "Split Squats": { img: "/src/assets/exercises/split_squats.png", cue: "Vertical torso, slow down" },
-  "Wall Sit": { img: "/src/assets/exercises/wall_sit.png", cue: "Knees 90°, back flat" },
-  "Calf Raises": { img: "/src/assets/exercises/calf_raises.png", cue: "Full range, slow" },
-  "Plank": { img: "/src/assets/exercises/plank.png", cue: "Brace core, no sag" },
-  "Dead Bug": { img: "/src/assets/exercises/dead_bug.png", cue: "Lower back pressed" },
-  "Standing Knee Raises": { img: "/src/assets/exercises/standing_knee_raises.png", cue: "Control, don’t sway" },
-  "Standing Oblique Crunch": { img: "/src/assets/exercises/standing_oblique_crunch.png", cue: "Elbow to knee, slow" },
-  "March Hold": { img: "/src/assets/exercises/march_hold.png", cue: "Balance, core tight" },
-  "Jumping Jacks": { img: "/src/assets/exercises/jumping_jacks.png", cue: "Light landings" },
-  "Low-Impact High Knees": { img: "/src/assets/exercises/low_impact_high_knees.png", cue: "Quick but quiet" },
-  "Shadow Boxing": { img: "/src/assets/exercises/shadow_boxing.png", cue: "Stay light, rotate" },
-  "Step-back Burpees": { img: "/src/assets/exercises/step_back_burpees.png", cue: "Step back, no jump" },
-  "Superman Hold": { img: "/src/assets/exercises/superman_hold.png", cue: "Lift chest & legs" },
-  "Reverse Snow Angels": { img: "/src/assets/exercises/reverse_snow_angels.png", cue: "Thumbs up, squeeze back" },
-  "Pull-Apart Hold": { img: "/src/assets/exercises/pull_apart_hold.png", cue: "Squeeze shoulder blades" },
-  "Elbow Drive": { img: "/src/assets/exercises/elbow_drive.png", cue: "Drive elbows back" },
-  "Row Hold": { img: "/src/assets/exercises/row_hold.png", cue: "Hold squeeze" },
+  "Push-ups": { img: "/assets/exercises/pushups.png", cue: "Body straight, elbows ~45°" },
+  "Incline Push-ups": { img: "/assets/exercises/incline_pushups.png", cue: "Hands elevated, keep core tight" },
+  "Wall Push-ups": { img: "/assets/exercises/wall_pushups.png", cue: "Straight line, slow control" },
+  "Pike Push-ups": { img: "/assets/exercises/pike_pushups.png", cue: "Hips high, head toward floor" },
+  "Squats": { img: "/assets/exercises/squats.png", cue: "Chest up, hips back" },
+  "Reverse Lunges": { img: "/assets/exercises/reverse_lunges.png", cue: "Step back, front knee stable" },
+  "Split Squats": { img: "/assets/exercises/split_squats.png", cue: "Vertical torso, slow down" },
+  "Wall Sit": { img: "/assets/exercises/wall_sit.png", cue: "Knees 90°, back flat" },
+  "Calf Raises": { img: "/assets/exercises/calf_raises.png", cue: "Full range, slow" },
+  "Plank": { img: "/assets/exercises/plank.png", cue: "Brace core, no sag" },
+  "Dead Bug": { img: "/assets/exercises/dead_bug.png", cue: "Lower back pressed" },
+  "Standing Knee Raises": { img: "/assets/exercises/standing_knee_raises.png", cue: "Control, don’t sway" },
+  "Standing Oblique Crunch": { img: "/assets/exercises/standing_oblique_crunch.png", cue: "Elbow to knee, slow" },
+  "March Hold": { img: "/assets/exercises/march_hold.png", cue: "Balance, core tight" },
+  "Jumping Jacks": { img: "/assets/exercises/jumping_jacks.png", cue: "Light landings" },
+  "Low-Impact High Knees": { img: "/assets/exercises/low_impact_high_knees.png", cue: "Quick but quiet" },
+  "Shadow Boxing": { img: "/assets/exercises/shadow_boxing.png", cue: "Stay light, rotate" },
+  "Step-back Burpees": { img: "/assets/exercises/step_back_burpees.png", cue: "Step back, no jump" },
+  "Superman Hold": { img: "/assets/exercises/superman_hold.png", cue: "Lift chest & legs" },
+  "Reverse Snow Angels": { img: "/assets/exercises/reverse_snow_angels.png", cue: "Thumbs up, squeeze back" },
+  "Pull-Apart Hold": { img: "/assets/exercises/pull_apart_hold.png", cue: "Squeeze shoulder blades" },
+  "Elbow Drive": { img: "/assets/exercises/elbow_drive.png", cue: "Drive elbows back" },
+  "Row Hold": { img: "/assets/exercises/row_hold.png", cue: "Hold squeeze" },
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
