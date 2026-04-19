@@ -1,289 +1,119 @@
-/* --- Base Reset --- */
-* {
-  box-sizing: border-box;
+html, body {
   margin: 0;
   padding: 0;
+  min-height: 100%;
+  overflow-y: auto; /* allow bottom to be visible */
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: radial-gradient(circle at 30% 20%, #1a1f2b, #0b0e14 60%);
-  color: #ffffff;
-}
-
-/* --- Container --- */
 .app {
-  max-width: 420px;
-  margin: 40px auto;
-  padding: 28px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.04);
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-  position: relative;
+  min-height: 100vh;
+  width: 100%;
 }
 
-h2 {
-  font-size: 20px;
-  margin-bottom: 16px;
-  font-weight: 600;
-}
-
-/* --- Toggles --- */
-.controls {
+.main-card {
+  min-height: 85dvh;
   display: flex;
-  gap: 16px;
-  margin-top: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: #cfcfcf;
-  opacity: 0.85;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+}
+
+/* layout helpers for start screen */
+.main-card > .top {
+  /* stays at top */
+}
+
+.main-card > .center {
+  display: flex;
   justify-content: center;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  padding-bottom: 12px;
-}
-
-.controls input[type="checkbox"] {
-  accent-color: #e53935;
-  margin-right: 6px;
-}
-
-.controls label {
-  display: flex;
   align-items: center;
-  gap: 4px;
+  width: 100%;
 }
 
-/* --- Buttons --- */
-.buttons {
+.main-card > .bottom {
+  /* stays at bottom */
+}
+
+/* spacer to push center into middle */
+.flex-spacer {
+  flex: 1;
+}
+
+/* tighten top spacing */
+.header {
   display: flex;
-  gap: 10px;
-  margin-bottom: 32px;
-  opacity: 0.9;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.style-block {
+  margin-top: 6px;
 }
 
 button {
-  flex: 1;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(129,199,132,0.25);
-  background: rgba(129,199,132,0.08);
-  color: #d8f3dc;
-  font-weight: 500;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  max-width: none;
 }
 
-button:hover {
-  background: rgba(129,199,132,0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+/* reduce lower empty space slightly */
+.main-card > .center + .flex-spacer {
+  flex: 0.5;
 }
 
-button:active {
-  transform: scale(0.96);
-}
-
-button small {
-  font-size: 10px;
-  opacity: 0.7;
-  margin-left: 4px;
-}
-
-.emergency-btn {
-  width: 65%;
-  margin: 0 auto;
-  margin-bottom: 20px;
-  height: 76px;
-  font-size: 18px;
-  font-weight: 700;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #ff4d4d, #e53935);
-  box-shadow: 0 10px 30px rgba(229,57,53,0.4);
-  transition: all 0.25s ease;
-}
-
-.emergency-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 40px rgba(229,57,53,0.6);
-}
-
-/* --- Timer Display --- */
-.timer {
-  font-size: 88px;
-  font-weight: 700;
-  text-align: center;
-  margin: 6px 0 16px;
-  letter-spacing: 1px;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.6);
-}
-
-/* --- Paused State --- */
-.app.paused .timer {
-  opacity: 0.6;
-}
-
-.exercise-name {
-  font-size: 24px;
-  text-align: center;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-
-.meta {
-  font-size: 11px;
-  color: rgba(255,255,255,0.4);
-  text-align: center;
-  margin-bottom: 4px;
-  letter-spacing: 0.5px;
-}
-
-.workout-block {
-  padding: 26px;
-  border-radius: 18px;
-  background: rgba(129,199,132,0.10);
-  border: 1px solid rgba(129,199,132,0.25);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+/* bottom grouping */
+.bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.4);
-  position: relative;
-  overflow: hidden;
+  gap: 8px;
 }
 
-.workout-block::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 18px;
-  pointer-events: none;
-  background: linear-gradient(
-    120deg,
-    rgba(129,199,132,0.25),
-    rgba(129,199,132,0.05) 40%,
-    rgba(129,199,132,0.15)
-  );
+.duration-block {
+  margin-bottom: 4px;
+}
+
+/* install button alignment */
+.install-btn {
+  display: block;
+  margin: 8px auto 0;
   opacity: 0.6;
 }
 
-/* --- Progress Bar --- */
-.progress-bar {
-  height: 6px;
-  background: rgba(255,255,255,0.06);
-  border-radius: 3px;
-  overflow: hidden;
-  margin: 20px 0 10px;
-  width: 100%;
-}
-
-.progress {
-  height: 100%;
-  background: linear-gradient(90deg, #4caf50, #81c784);
-  width: 100%;
-  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: width;
-}
-
-.progress.pulse-sync {
-  animation: progressPulse 1s ease-in-out infinite;
-}
-
-@keyframes progressPulse {
-  0% { filter: brightness(1); }
-  50% { filter: brightness(1.2); }
-  100% { filter: brightness(1); }
-}
-
-/* --- Overall Workout Progress --- */
-.overall-progress-bar {
-  height: 4px;
-  background: rgba(255,255,255,0.05);
-  border-radius: 2px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  width: 100%;
-}
-
-.overall-progress {
-  height: 100%;
-  width: 0%;
-  background: rgba(129,199,132,0.5);
-  transition: width 0.3s ease;
-}
-
-/* --- Rest State --- */
-.rest {
-  text-align: center;
-}
-
-.rest .timer {
-  color: rgba(255,255,255,0.6);
-}
-
-/* --- Completion Screen --- */
-.complete {
-  text-align: center;
-  margin-top: 40px;
-}
-
-.complete-title {
-  font-size: 24px;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.complete-sub {
-  font-size: 14px;
-  color: #aaa;
-  margin-bottom: 20px;
-}
-
-/* --- Secondary Buttons --- */
-.secondary {
+/* chip hierarchy */
+.duration-options {
   display: flex;
   gap: 10px;
 }
 
-.secondary button {
-  background: #2a2f3a;
+.duration-chip {
+  opacity: 0.5;
 }
 
-.secondary button:hover {
-  background: #3a404d;
+.duration-chip.active {
+  opacity: 1;
 }
 
-.brand-pill {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  font-size: 8px;
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.04);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 0.3px;
-  box-shadow: none;
+.profile-note {
+  opacity: 0.65;
 }
 
-/* --- Hide controls during workout --- */
-.app.in-workout #emergency,
-.app.in-workout #start15,
-.app.in-workout #start25,
-.app.in-workout #start40 {
-  display: none !important;
+.video-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
 }
-.controls label span:last-child {
-  font-size: 9px;
-  opacity: 0.4;
-  margin-left: 0;
+
+.video-overlay-inner {
+  width: 80%;
+  max-width: 320px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
 }

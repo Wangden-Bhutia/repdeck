@@ -1,62 +1,71 @@
-
-// @ts-nocheck
-
-
+import "./styles/start.css";
+import type { WorkoutMode } from "./domain/exercisePool";
+import type {
+  ConstraintProfile,
+  GenerationPreferences,
+  WorkoutSession,
+} from "./domain/workoutGenerator";
 import { generateWorkoutSession } from "./domain/workoutGenerator";
+import { createWorkoutController } from "./controllers/workoutControllers";
+import { renderStartView } from "./ui/startView";
+import { showAboutOverlay, showPreviewOverlay } from "./ui/overlays";
+import { renderWorkout } from "./ui/workoutView";
+import { playBeep, playCompletionSignal, triggerHaptic } from "./utils/feedback";
+import {
+  buildGenerationPreferences,
+  loadPersonalizationState,
+  recordWorkoutFeedback,
+  saveConstraintPreferences,
+  savePersonalizationState,
+  type FeedbackRating,
+  type StoredConstraintPreferences,
+  type WorkoutStyleProfile,
+} from "./utils/personalization";
 
-
-// --- PWA Install Prompt Handling ---
-let deferredPrompt: any;
-let installAvailable = false;
-// Detect if app is already installed (standalone mode)
-const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-
-if (isStandalone) {
-  window.addEventListener("DOMContentLoaded", () => {
-    const btn = document.getElementById("installBtn") as HTMLButtonElement;
-    if (btn) btn.remove();
-  });
+declare global {
+  interface Window {
+    nextExercise?: () => void;
+    triggerInstall?: () => Promise<void>;
+  }
 }
 
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  installAvailable = true;
+type WorkoutDuration = 15 | 25 | 40;
+type WorkoutStyle = WorkoutStyleProfile | "custom";
 
-  const btn = document.getElementById("installBtn") as HTMLButtonElement;
-  if (btn) btn.style.opacity = "0.9";
-});
-
-// Expose manual trigger (can be wired to button later)
-(window as any).triggerInstall = async () => {
-  if (!deferredPrompt) return;
-
-  deferredPrompt.prompt();
-  const choice = await deferredPrompt.userChoice;
-  deferredPrompt = null;
-
-  if (choice?.outcome === "accepted") {
-    const btn = document.getElementById("installBtn") as HTMLButtonElement;
-    if (btn) btn.remove();
-  }
+type SessionRunConfig = StoredConstraintPreferences & {
+  duration: WorkoutDuration;
+  mode: WorkoutMode;
+  style: WorkoutStyleProfile;
+  personalization: GenerationPreferences;
 };
 
-// --- Preload exercise images for instant display ---
-function preloadExerciseImages() {
-  Object.values(EX_PREVIEW).forEach(({ img }) => {
-    const image = new Image();
-    image.src = img;
-  });
+const CURRENT_VERSION = "0.2.1";
+const app = document.querySelector<HTMLElement>("#app");
+let selectedDuration: WorkoutDuration | null = null;
+
+let lastSessionContext: {
+  session: WorkoutSession;
+  duration: WorkoutDuration;
+  mode: WorkoutMode;
+  constraints: StoredConstraintPreferences;
+} | null = null;
+
+const storedVersion = localStorage.getItem("app_version");
+
+if (storedVersion && storedVersion !== CURRENT_VERSION) {
+  localStorage.setItem("app_version", CURRENT_VERSION);
+  location.reload();
+} else {
+  localStorage.setItem("app_version", CURRENT_VERSION);
 }
 
-// Remove install button after app is installed
-window.addEventListener("appinstalled", () => {
-  const btn = document.getElementById("installBtn") as HTMLButtonElement;
-  if (btn) btn.remove();
-});
+let deferredPrompt: {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+} | null = null;
+let installAvailable = false;
 
-// --- Exercise preview (minimal) ---
-const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
+const EX_PREVIEW = {
   "Push-ups": { img: "/assets/exercises/pushups.png", cue: "Body straight, elbows ~45°" },
   "Incline Push-ups": { img: "/assets/exercises/incline_pushups.png", cue: "Hands elevated, keep core tight" },
   "Wall Push-ups": { img: "/assets/exercises/wall_pushups.png", cue: "Straight line, slow control" },
@@ -66,7 +75,7 @@ const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
   "Split Squats": { img: "/assets/exercises/split_squats.png", cue: "Vertical torso, slow down" },
   "Wall Sit": { img: "/assets/exercises/wall_sit.png", cue: "Knees 90°, back flat" },
   "Calf Raises": { img: "/assets/exercises/calf_raises.png", cue: "Full range, slow" },
-  "Plank": { img: "/assets/exercises/plank.png", cue: "Brace core, no sag" },
+  Plank: { img: "/assets/exercises/plank.png", cue: "Brace core, no sag" },
   "Dead Bug": { img: "/assets/exercises/dead_bug.png", cue: "Lower back pressed" },
   "Standing Knee Raises": { img: "/assets/exercises/standing_knee_raises.png", cue: "Control, don’t sway" },
   "Standing Oblique Crunch": { img: "/assets/exercises/standing_oblique_crunch.png", cue: "Elbow to knee, slow" },
@@ -82,711 +91,474 @@ const EX_PREVIEW: Record<string, { img: string; cue: string }> = {
   "Row Hold": { img: "/assets/exercises/row_hold.png", cue: "Hold squeeze" },
 };
 
-const app = document.querySelector<HTMLDivElement>("#app");
-
-// --- Global state (needed for functions outside app block) ---
-let lastConstraints = { noFloor: false, lowNoise: false };
-let lastSession: ReturnType<typeof generateWorkoutSession> | null = null;
-
-
-const showPreview = (name: string) => {
-  const data = EX_PREVIEW[name];
-  if (!data) return;
-
-  const overlay = document.createElement("div");
-  overlay.className = "preview-overlay";
-  overlay.innerHTML = `
-    <div class="preview-card">
-      <img src="${data.img}" alt="${name}" />
-      <div class="preview-title">${name}</div>
-      <div class="preview-cue">${data.cue}</div>
-      <button id="closePreview">Close</button>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  const close = () => overlay.remove();
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
+const preloadExerciseImages = () => {
+  Object.values(EX_PREVIEW).forEach(({ img }) => {
+    const image = new Image();
+    image.src = img;
   });
-  (overlay.querySelector("#closePreview") as HTMLButtonElement).onclick = close;
 };
 
+const getModeForDuration = (duration: WorkoutDuration): WorkoutMode => {
+  if (duration === 15) return "quick_reset";
+  if (duration === 40) return "deep_work";
+  return "standard_flow";
+};
+
+const getConstraintSnapshot = (
+  source?: Partial<StoredConstraintPreferences>
+): StoredConstraintPreferences => {
+  if (source) {
+    return {
+      noFloor: Boolean(source.noFloor),
+      lowNoise: Boolean(source.lowNoise),
+      avoidKnee: Boolean(source.avoidKnee),
+      avoidShoulder: Boolean(source.avoidShoulder),
+      noJump: Boolean(source.noJump),
+    };
+  }
+
+  const inputValue = (id: string) => {
+    const input = document.getElementById(id);
+    return input instanceof HTMLInputElement ? input.checked : false;
+  };
+
+  const fallbackConstraints = {
+    noFloor: inputValue("noFloor"),
+    lowNoise: inputValue("lowNoise"),
+    avoidKnee: inputValue("avoidKnee"),
+    avoidShoulder: inputValue("avoidShoulder"),
+    noJump: inputValue("noJump"),
+  };
+
+  if (
+    fallbackConstraints.noFloor ||
+    fallbackConstraints.lowNoise ||
+    fallbackConstraints.noJump ||
+    fallbackConstraints.avoidKnee ||
+    fallbackConstraints.avoidShoulder
+  ) {
+    return fallbackConstraints;
+  }
+
+  const activeStyles = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-style].active")
+).map(btn => btn.dataset.style);
+
+return {
+  noFloor: activeStyles.includes("no_floor"),
+  lowNoise: activeStyles.includes("low_noise"),
+  noJump: activeStyles.includes("low_noise"), // tie jumping to noise
+  avoidKnee: false,
+  avoidShoulder: false,
+};
+
+  return STYLE_PRESETS.anywhere;
+};
+
+const STYLE_PRESETS: Record<
+  Exclude<WorkoutStyle, "custom">,
+  StoredConstraintPreferences
+> = {
+  anywhere: {
+    noFloor: false,
+    lowNoise: false,
+    noJump: false,
+    avoidKnee: false,
+    avoidShoulder: false,
+  },
+  quiet: {
+    noFloor: false,
+    lowNoise: true,
+    noJump: true,
+    avoidKnee: false,
+    avoidShoulder: false,
+  },
+  joint_friendly: {
+    noFloor: true,
+    lowNoise: true,
+    noJump: true,
+    avoidKnee: false,
+    avoidShoulder: false,
+  },
+};
+
+const constraintsEqual = (
+  a: StoredConstraintPreferences,
+  b: StoredConstraintPreferences
+) =>
+  a.noFloor === b.noFloor &&
+  a.lowNoise === b.lowNoise &&
+  a.noJump === b.noJump &&
+  a.avoidKnee === b.avoidKnee &&
+  a.avoidShoulder === b.avoidShoulder;
+
+const inferWorkoutStyle = (
+  constraints: StoredConstraintPreferences
+): WorkoutStyle => {
+  if (constraintsEqual(constraints, STYLE_PRESETS.anywhere)) return "anywhere";
+  if (constraintsEqual(constraints, STYLE_PRESETS.quiet)) return "quiet";
+  if (constraintsEqual(constraints, STYLE_PRESETS.joint_friendly)) {
+    return "joint_friendly";
+  }
+  return "custom";
+};
+
+const resolveWorkoutStyle = (
+  constraints: StoredConstraintPreferences
+): WorkoutStyleProfile => {
+  const inferred = inferWorkoutStyle(constraints);
+  return inferred === "custom" ? "anywhere" : inferred;
+};
+
+const resolveOutput = (output: HTMLElement | string) =>
+  output instanceof HTMLElement
+    ? output
+    : document.querySelector<HTMLElement>(output);
+
+const formatConstraintSummary = (constraints: StoredConstraintPreferences) => {
+  const labels = [
+    constraints.noFloor ? "standing only" : "",
+    constraints.lowNoise ? "quiet" : "",
+    constraints.avoidKnee ? "knee-aware" : "",
+    constraints.avoidShoulder ? "shoulder-aware" : "",
+  ].filter(Boolean);
+
+  return labels.length ? labels.join(" • ") : "full-body mix";
+};
 
 if (app) {
-  app.innerHTML = `
-  <div class="app" style="display:flex;flex-direction:column;justify-content:space-between;min-height:100vh;padding:16px 12px;">
-<style>
-@keyframes pulse {
-  0% { transform: scale(1); box-shadow: 0 0 0 rgba(229,57,53,0.15); }
-  50% { transform: scale(1.005); box-shadow: 0 0 6px rgba(229,57,53,0.2); }
-  100% { transform: scale(1); box-shadow: 0 0 0 rgba(229,57,53,0.15); }
-}
-.fade-in {
-  opacity: 0;
-  transform: translateY(6px);
-  transition: all 0.3s ease;
-}
-.fade-in.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-.preview-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-  display: flex; align-items: center; justify-content: center; z-index: 9999;
-}
-.preview-card {
-  background: #111; border-radius: 12px; padding: 12px; width: 280px; text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-}
-.preview-card img { width: 100%; border-radius: 8px; }
-.preview-title { margin-top: 8px; font-weight: 600; }
-.preview-cue { font-size: 12px; opacity: 0.7; margin: 6px 0 10px; }
-.preview-card button { padding: 6px 10px; }
 
-.about-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
+  const renderStartScreen = () => {
+    const personalization = loadPersonalizationState();
 
-.about-card {
-  background: rgba(255,255,255,0.08);
-  border-radius: 14px;
-  padding: 18px;
-  width: 280px;
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.12);
-}
-
-.about-card button {
-  margin-top: 12px;
-  padding: 6px 10px;
-}
-
-.emergency-btn {
-  background: #b71c1c; /* deeper red */
-  color: #fff;
-  border: none;
-  box-shadow: none; /* remove glow */
-}
-/* --- End screen polish --- */
-.complete {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 60vh;
-  transform: scale(0.98);
-  opacity: 0;
-  transition: all 0.3s ease;
-}
-
-.complete.show {
-  transform: scale(1);
-  opacity: 1;
-}
-
-.complete-title {
-  font-size: 22px;
-  font-weight: 600;
-}
-
-  .complete-sub {
-    margin-top: 6px;
-    opacity: 0;
-  }
-
-  .complete.show .complete-sub {
-    opacity: 0.8;
-    transition: opacity 0.3s ease 0.15s;
-  }
-
-.secondary {
-  margin-top: 16px;
-  display: flex;
-  gap: 12px;
-}
-
-#newBtn {
-  background: #e53935;
-  color: white;
-}
-
-#restartBtn {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.2);
-  color: #aaa;
-}
-  #restartBtn {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.2);
-  color: #aaa;
-}
-
-@media (max-width: 480px) {
-  #emergency {
-    width: 140px;
-    height: 140px;
-    font-size: 13px;
-  }
-}
-
-#emergency {
-  border-radius: 50%;
-  overflow: hidden;
-  will-change: transform;
-}
-
-#emergency:active {
-  transform: scale(0.94);
-}
-</style>
-
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h2>RepDeck</h2>
-        <div id="aboutTrigger" class="meta" style="cursor:pointer;">Fallback Mode</div>
-      </div>
-
-      <div class="controls" style="justify-content:flex-start;margin-bottom:16px;flex-direction:column;gap:4px;opacity:0.85;">
-        <label style="display:flex;flex-direction:column;align-items:flex-start;">
-          <span>
-            <input type="checkbox" id="noFloor" /> Stay Standing
-          </span>
-          <span style="font-size:10px;opacity:0.3;margin-left:0;">no floor exercises</span>
-        </label>
-        <label style="display:flex;flex-direction:column;align-items:flex-start;">
-          <span>
-            <input type="checkbox" id="lowNoise" /> No Noise
-          </span>
-          <span style="font-size:10px;opacity:0.3;margin-left:0;">no jumping</span>
-        </label>
-      </div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;flex:1;gap:8px;">
-     <button 
-       id="emergency" 
-       class="emergency-btn" 
-       style="
-         width:160px;
-         height:160px; /* force exact height */
-         border-radius:50%;
-         font-size:14px;
-         display:flex;
-         align-items:center;
-         justify-content:center;
-         text-align:center;
-         flex:0 0 auto; /* prevent flex stretching */
-       "
-     >
-       START<br/>15M
-     </button>
-      <div id="startHint" style="font-size:11px;opacity:0.4;text-align:center;margin-top:-18px;margin-bottom:12px;">
-        No setup. Just start.
-      </div>
-      <button id="installBtn" style="
-        margin-top:6px;
-        font-size:11px;
-        opacity:0.5;
-        background:none;
-        border:none;
-        color:#aaa;
-      ">
-        Install App
-      </button>
-    </div>
-
-    <div>
-      <div class="buttons">
-        <button id="start25">25 min</button>
-        <button id="start40">40 min</button>
-      </div>
-
-      <div id="output" style="margin-top:16px;"></div>
-    </div>
-
-
-  </div>
-`;
-
-  const emergencyBtn = document.getElementById("emergency") as HTMLButtonElement;
-  const btn25 = document.getElementById("start25") as HTMLButtonElement;
-  const btn40 = document.getElementById("start40") as HTMLButtonElement;
-  const output = document.getElementById("output") as HTMLDivElement;
-  const noFloor = document.getElementById("noFloor") as HTMLInputElement;
-  const lowNoise = document.getElementById("lowNoise") as HTMLInputElement;
-
-  const aboutTrigger = document.getElementById("aboutTrigger");
-  aboutTrigger?.addEventListener("click", () => showAbout());
-
-let currentSession: ReturnType<typeof generateWorkoutSession> | null = null;
-let currentIndex = 0;
-let currentRound = 1;
-const restSecondsDefault = 15;
-let isResting = false;
-  let timerId: number | undefined;
-  let remainingSeconds = 0;
-  let isPaused = false;
-  let difficultyOffset = 0; // +/- seconds adjustment
-  let skipsCount = 0;
-  let totalSessionSeconds = 0;
-  let remainingSessionSeconds = 0;
-
-  const bindCompletionActions = () => {
-    const restartBtn = document.getElementById("restartBtn") as HTMLButtonElement;
-    const newBtn = document.getElementById("newBtn") as HTMLButtonElement;
-
-    restartBtn?.addEventListener("click", () => {
-      if (!lastSession) return;
-
-      currentSession = lastSession;
-      currentIndex = 0;
-      currentRound = 1;
-      isResting = false;
-
-      if (timerId) {
-        clearInterval(timerId);
-        timerId = undefined;
-      }
-
-      renderCurrent();
+    app.innerHTML = renderStartView({
+      ...personalization.profile.constraints,
+      selectedDuration,
+      completedSessions: personalization.profile.completedSessions,
+      lastFeedback: personalization.profile.lastFeedback,
     });
 
-    newBtn?.addEventListener("click", () => {
-      window.location.reload();
-    });
+    bindStartViewEvents();
+    syncInstallButton();
   };
 
-  const playBeep = (type: "normal" | "rest" | "start" = "normal") => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+  const startSession = (
+    duration: WorkoutDuration,
+    overrideConstraints?: Partial<StoredConstraintPreferences>
+  ) => {
+    console.log("START SESSION CALLED", duration);
+    selectedDuration = duration;
+    const constraints = getConstraintSnapshot(overrideConstraints);
+    saveConstraintPreferences(constraints);
+    const style = resolveWorkoutStyle(constraints);
 
-      osc.type = "sine";
-      let duration = 200;
-
-      if (type === "start") {
-        osc.frequency.value = 1000; // higher pitch
-        duration = 120; // shorter, lighter
-      } else if (type === "rest") {
-        osc.frequency.value = 500; // low tone
-        duration = 200;
-      } else {
-        osc.frequency.value = 700; // mid tone (end beep)
-        duration = 220; // slightly longer
-      }
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-
-      // vibration feedback (mobile)
-      if (navigator.vibrate) {
-        navigator.vibrate(50);
-      }
-
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-
-      setTimeout(() => {
-        osc.stop();
-        ctx.close();
-      }, duration);
-    } catch (e) {}
-  };
-
-  // --- Completion signal (soft double beep + vibration) ---
-  const playCompletionSignal = () => {
-    // soft double beep + vibration pattern
-    setTimeout(() => playBeep("normal"), 100);
-    setTimeout(() => playBeep("normal"), 300);
-
-    if (navigator.vibrate) {
-      navigator.vibrate([40, 60, 40]);
-    }
-  };
-
-  const runSession = (duration: 15 | 25 | 40) => {
-    const appContainer = document.querySelector(".app");
-    appContainer?.classList.add("in-workout");
-    // lastDuration = duration;
-    lastConstraints = {
-      noFloor: noFloor.checked,
-      lowNoise: lowNoise.checked,
+    const personalization = loadPersonalizationState();
+    const workoutConfig: SessionRunConfig = {
+      ...constraints,
+      duration,
+      durationSeconds: duration * 60,
+      mode: getModeForDuration(duration),
+      style,
+      personalization: buildGenerationPreferences(personalization, {
+        style,
+        duration,
+      }),
     };
 
-    const session = generateWorkoutSession(duration, lastConstraints);
-    // compute total session seconds (work only)
-    totalSessionSeconds = session.exercises.reduce((sum, e) => sum + e.workSeconds, 0) * session.rounds;
-    remainingSessionSeconds = totalSessionSeconds;
+    triggerHaptic(30);
+    app.innerHTML = `<div id="output"></div>`;
 
-    lastSession = session;
-
-    currentSession = session;
-    currentIndex = 0;
-    currentRound = 1;
-    skipsCount = 0;
-    isResting = false;
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = undefined;
-    }
-    const hint = document.getElementById("startHint");
-    hint?.remove();
-    renderCurrent();
-  };
-
-  function renderCurrent() {
-    if (!currentSession) return;
-
-    isPaused = false;
-
-    // overall workout progress
-    const totalSteps = currentSession.exercises.length * currentSession.rounds;
-    const currentStep =
-      (currentRound - 1) * currentSession.exercises.length + currentIndex;
-    const overallPercent = (currentStep / totalSteps) * 100;
-
-    if (isResting) {
-      remainingSeconds = restSecondsDefault;
-
-      output.innerHTML = `
-        <div class="rest">
-          <div class="meta">Rest • Round ${currentRound} / ${currentSession.rounds}</div>
-          <div id="sessionTimer" style="font-size:12px;opacity:0.5;text-align:center;margin-bottom:6px;"></div>
-          <div id="timer" class="timer">${remainingSeconds}</div>
-        </div>
-      `;
-      output.classList.remove("show");
-      output.classList.add("fade-in");
-      setTimeout(() => output.classList.add("show"), 10);
-
-      const timerEl = document.getElementById("timer") as HTMLDivElement;
-
-      if (timerId) {
-        clearInterval(timerId);
-        timerId = undefined;
-      }
-
-      timerId = window.setInterval(() => {
-        remainingSessionSeconds--;
-        remainingSeconds--;
-
-        // last 3 sec countdown effect
-        if (remainingSeconds <= 3 && remainingSeconds > 0) {
-          playBeep("rest");
-          timerEl.style.color = "#e53935";
-          timerEl.style.transform = "scale(1.15)";
-          timerEl.style.textShadow = "0 0 10px rgba(229,57,53,0.6)";
-        } else {
-          timerEl.style.color = "#cccccc";
-          timerEl.style.transform = "scale(1.02)";
-          timerEl.style.textShadow = "none";
-          setTimeout(() => {
-            timerEl.style.transform = "scale(1)";
-          }, 120);
-        }
-
-        timerEl.textContent = `${Math.max(remainingSeconds, 0)}s`;
-        timerEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
-
-        const sessionEl = document.getElementById("sessionTimer") as HTMLDivElement;
-        if (sessionEl) {
-          const mins = Math.floor(remainingSessionSeconds / 60);
-          const secs = remainingSessionSeconds % 60;
-          sessionEl.textContent = `${mins}:${secs.toString().padStart(2, "0")} remaining`;
-        }
-
-        if (remainingSeconds <= 0) {
-          playBeep("rest");
-          clearInterval(timerId!);
-          timerId = undefined;
-          isResting = false;
-          renderCurrent();
-        }
-      }, 1000);
-
+    const workoutRoot = document.getElementById("output");
+    if (!workoutRoot) {
       return;
     }
+    console.log("RUNNING SESSION", workoutConfig);
+    // Create controller here
+    const controller = createWorkoutController({
+      generateWorkoutSession,
+      renderWorkout,
+      playBeep,
+      playCompletionSignal,
+      onSessionComplete: ({
+        output,
+        session,
+        duration,
+        mode,
+        constraints,
+      }: {
+        output: HTMLElement | string;
+        session: WorkoutSession;
+        duration: WorkoutDuration;
+        mode: WorkoutMode;
+        constraints: ConstraintProfile;
+      }) => {
+        const root = resolveOutput(output);
+        if (!root) return;
 
-    const item = currentSession.exercises[currentIndex];
-    playBeep("start");
+        const snapshot = getConstraintSnapshot(constraints);
 
-    const adjusted = item.workSeconds + difficultyOffset;
-    remainingSeconds = Math.max(15, adjusted);
+        lastSessionContext = {
+          session,
+          duration,
+          mode,
+          constraints: snapshot,
+        };
+
+        renderCompletionScreen(root, session, duration, mode, snapshot);
+      },
+    });
+    // update global nextExercise reference
+    window.nextExercise = controller.nextExercise;
+    try {
+      controller.runSession(workoutConfig, workoutRoot);
+    } catch (err) {
+      console.error("RUN SESSION ERROR", err);
+    }
+  };
+
+  const renderCompletionScreen = (
+    output: HTMLElement,
+    session: WorkoutSession,
+    duration: WorkoutDuration,
+    mode: WorkoutMode,
+    constraints: StoredConstraintPreferences
+  ) => {
+    const summary = formatConstraintSummary(constraints);
 
     output.innerHTML = `
-      <div class="overall-progress-bar">
-        <div id="overallProgress" class="overall-progress"></div>
+    <div class="completion-container">
+      <div class="workout-card" style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px;">
+        <div style="font-size:28px;font-weight:700;">Session Complete</div>
+        <div style="opacity:0.8;">You didn’t skip today</div>
+        <div style="opacity:0.7;">That’s enough.</div>
+
+        <div id="feedback" style="font-size:13px;opacity:0.6;cursor:pointer;margin-bottom:18px;">
+          <span data-value="easy">Too Easy</span> • 
+          <span data-value="good">Good</span> • 
+          <span data-value="hard">Too Hard</span>
+        </div>
+
+        <button id="repeatBtn" type="button" class="secondary-btn">Go Again</button>
+        <button id="homeBtn" type="button" class="secondary-btn">Home</button>
       </div>
+    </div>
+`;
 
-      <div id="timer" class="timer">${remainingSeconds}</div>
+    const feedback = document.getElementById("feedback");
+    feedback?.addEventListener("click", (e: any) => {
+      const value = e.target?.dataset?.value;
+      if (!value) return;
 
-      <div id="exerciseName" class="exercise-name" style="cursor:pointer;">
-        ${item.exercise.name}
-      </div>
+      // visual feedback (highlight selection)
+      const spans = feedback.querySelectorAll("span");
+      spans.forEach((s: any) => {
+        s.style.opacity = "0.25"; // more faded
+        s.style.color = "rgba(255,255,255,0.4)";
+      });
 
-      <div class="meta">
-        Round ${currentRound} • ${currentIndex + 1}/${currentSession.exercises.length}
-      </div>
+      const target = e.target as HTMLElement;
+      target.style.opacity = "1";
+      target.style.color = "#4ADE80"; // brighter green
 
-      <div id="sessionTimer" style="font-size:12px;opacity:0.5;text-align:center;margin-bottom:6px;"></div>
-
-      <div class="progress-bar">
-        <div id="progress" class="progress"></div>
-      </div>
-
-      <div class="buttons">
-        <button id="pauseBtn">Pause</button>
-        <button id="nextBtn">Skip</button>
-      </div>
-    `;
-    output.classList.remove("show");
-    output.classList.add("fade-in");
-    setTimeout(() => output.classList.add("show"), 10);
-
-    const overallEl = document.getElementById("overallProgress") as HTMLDivElement;
-    if (overallEl) overallEl.style.width = `${overallPercent}%`;
-    const nextBtn = document.getElementById("nextBtn") as HTMLButtonElement;
-    const pauseBtn = document.getElementById("pauseBtn") as HTMLButtonElement;
-    const timerEl = document.getElementById("timer") as HTMLDivElement;
-    const progressEl = document.getElementById("progress") as HTMLDivElement;
-    const totalSeconds = item.workSeconds;
-    const nameEl = document.getElementById("exerciseName") as HTMLDivElement;
-    nameEl?.addEventListener("click", () => showPreview(item.exercise.name));
-
-    // shared timer tick logic
-    const tick = () => {
-      remainingSessionSeconds--;
-      remainingSeconds--;
-
-      const safeSeconds = Math.max(remainingSeconds, 0);
-      const progressPercent = (safeSeconds / totalSeconds) * 100;
-      if (progressEl) progressEl.style.width = `${progressPercent}%`;
-
-      // last 3 sec countdown effect
-      if (remainingSeconds <= 3 && remainingSeconds > 0) {
-        playBeep();
-        timerEl.style.color = "#e53935";
-        timerEl.style.transform = "scale(1.15)";
-        timerEl.style.textShadow = "0 0 10px rgba(229,57,53,0.6)";
-      } else {
-        timerEl.style.color = "#cccccc";
-        timerEl.style.transform = "scale(1.02)";
-        timerEl.style.textShadow = "none";
-        setTimeout(() => {
-          timerEl.style.transform = "scale(1)";
-        }, 120);
+      // confirmation text
+      let confirm = document.getElementById("feedbackConfirm");
+      if (!confirm) {
+        confirm = document.createElement("div");
+        confirm.id = "feedbackConfirm";
+        confirm.style.marginTop = "6px";
+        confirm.style.fontSize = "12px";
+        confirm.style.opacity = "0.7";
+        confirm.textContent = "Saved";
+        feedback.parentElement?.appendChild(confirm);
       }
 
-      timerEl.textContent = `${Math.max(remainingSeconds, 0)}s`;
-      timerEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+      window.dispatchEvent(new CustomEvent("workout:feedback", {
+        detail: { value }
+      }));
 
-      const sessionEl = document.getElementById("sessionTimer") as HTMLDivElement;
-      if (sessionEl) {
-        const mins = Math.floor(remainingSessionSeconds / 60);
-        const secs = remainingSessionSeconds % 60;
-        sessionEl.textContent = `${mins}:${secs.toString().padStart(2, "0")} remaining`;
-      }
+    });
 
-      if (remainingSeconds <= 0) {
-        playBeep();
-        clearInterval(timerId!);
-        timerId = undefined;
+   output.addEventListener("click", (e: any) => {
+  const id = e.target?.id;
 
-        currentIndex++;
+  if (id === "repeatBtn") {
+    const restartDuration = selectedDuration || duration;
+    console.log("GO AGAIN CLICKED", restartDuration);
+    startSession(restartDuration as WorkoutDuration);
+    return;
+  }
 
-        if (currentIndex >= currentSession!.exercises.length) {
-          if (currentRound >= currentSession!.rounds) {
-            if (skipsCount === 0) {
-              difficultyOffset = Math.max(difficultyOffset - 2, -10);
-            } else {
-              difficultyOffset = Math.min(difficultyOffset + 2, 10);
-            }
+  if (id === "homeBtn") {
+    renderStartScreen();
+    return;
+  }
+});
+};
 
-            playCompletionSignal();
+  const bindStartViewEvents = () => {
+    const styleButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("[data-style]")
+    );
 
-            setTimeout(() => {
-              output.innerHTML = `
-                <div class="complete">
-                  <div class="complete-title">Session Complete</div>
-                  <div class="complete-sub">You showed up.</div>
-                  <div class="secondary">
-                    <button id="restartBtn">Restart</button>
-                    <button id="newBtn">New Workout</button>
-                  </div>
-                </div>
-              `;
-              output.classList.remove("show");
-              output.classList.add("fade-in");
-              setTimeout(() => output.classList.add("show"), 10);
+    const paintStyleState = (clickedButton: HTMLButtonElement) => {
+      const isActive = clickedButton.classList.contains("active");
+      clickedButton.classList.toggle("active", !isActive);
+      clickedButton.setAttribute("aria-pressed", String(!isActive));
+    };
 
-              bindCompletionActions();
-              const completeEl = document.querySelector(".complete");
-              completeEl?.classList.add("show");
-            }, 300);
-            return;
-          }
+    const paintDurationState = (duration: WorkoutDuration | null) => {
+      selectedDuration = duration;
 
-          currentRound++;
-          currentIndex = 0;
-          isResting = true;
-          renderCurrent();
-          return;
-        }
+      document
+        .querySelectorAll<HTMLButtonElement>("[data-duration]")
+        .forEach((button) => {
+          const isActive = Number(button.dataset.duration) === duration;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-pressed", String(isActive));
+        });
 
-        renderCurrent();
+      // Update CTA secondary label directly
+      const ctaLabel = document.querySelector(".emergency-btn .secondary") as HTMLElement | null;
+      if (ctaLabel) {
+        ctaLabel.textContent = duration ? `${duration} min` : "";
       }
     };
 
-    // auto-start timer
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = undefined;
-    }
+    styleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        paintStyleState(button);
+      });
+    });
+    paintDurationState(selectedDuration);
 
-    timerId = window.setInterval(tick, 1000);
+    document
+      .querySelectorAll<HTMLButtonElement>("[data-duration]")
+      .forEach((button) => {
+        const duration = Number(button.dataset.duration) as WorkoutDuration;
+        button.addEventListener("click", () => {
+          if (duration === 15 || duration === 25 || duration === 40) {
+            paintDurationState(duration);
+          }
+        });
+      });
 
-    pauseBtn.addEventListener("click", () => {
-      pauseBtn.disabled = true;
-      setTimeout(() => (pauseBtn.disabled = false), 300);
+    document
+      .getElementById("start15")
+      ?.addEventListener("click", () => {
+        const durationToUse = selectedDuration || 15;
 
-      if (!isPaused && !timerId) return;
+        // default to anywhere style if nothing selected
+        const constraints = getConstraintSnapshot();
 
-      const appContainer = document.querySelector(".app");
+        startSession(durationToUse as WorkoutDuration, constraints);
+});
 
-      if (!isPaused) {
-        clearInterval(timerId);
-        timerId = undefined;
-        isPaused = true;
-        pauseBtn.textContent = "Resume";
-        appContainer?.classList.add("paused");
-      } else {
-        isPaused = false;
-        pauseBtn.textContent = "Pause";
-        appContainer?.classList.remove("paused");
-
-        // immediate tick
-        tick();
-
-        // start interval
-        timerId = window.setInterval(tick, 1000);
-      }
+    document.getElementById("aboutTrigger")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      showAboutOverlay();
     });
 
-    nextBtn.addEventListener("click", () => {
-      nextBtn.disabled = true;
-      setTimeout(() => (nextBtn.disabled = false), 300);
-
-      skipsCount++;
-      if (timerId) {
-        clearInterval(timerId);
-        timerId = undefined;
+    document.getElementById("installBtn")?.addEventListener("click", () => {
+      if (installAvailable) {
+        void window.triggerInstall?.();
       }
-      currentIndex++;
-
-      if (currentIndex >= currentSession!.exercises.length) {
-        if (currentRound >= currentSession!.rounds) {
-          // adaptive difficulty update
-          if (skipsCount === 0) {
-            difficultyOffset = Math.max(difficultyOffset - 2, -10);
-          } else {
-            difficultyOffset = Math.min(difficultyOffset + 2, 10);
-          }
-
-          playCompletionSignal();
-
-          setTimeout(() => {
-            output.innerHTML = `
-              <div class="complete">
-                <div class="complete-title">Session Complete</div>
-                <div class="complete-sub">You showed up.</div>
-                <div class="secondary">
-                  <button id="restartBtn">Restart</button>
-                  <button id="newBtn">New Workout</button>
-                </div>
-              </div>
-            `;
-            output.classList.remove("show");
-            output.classList.add("fade-in");
-            setTimeout(() => output.classList.add("show"), 10);
-
-            bindCompletionActions();
-            const completeEl = document.querySelector(".complete");
-            completeEl?.classList.add("show");
-          }, 300);
-          return;
-        }
-
-        currentRound++;
-        currentIndex = 0;
-        isResting = true;
-        renderCurrent();
-        return;
-      }
-
-      renderCurrent();
     });
   };
 
-  emergencyBtn.addEventListener("click", () => {
-    if (navigator.vibrate) {
-      navigator.vibrate(30);
-    }
-    runSession(15);
+  const syncInstallButton = () => {
+    setTimeout(() => {
+      const btn = document.getElementById("installBtn");
+      if (!btn) return;
+
+      btn.style.display = "inline-block";
+      btn.style.opacity = installAvailable ? "0.9" : "0.55";
+
+      const standalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        Boolean(
+          (window.navigator as Navigator & { standalone?: boolean }).standalone
+        );
+
+      if (standalone) {
+        btn.remove();
+      }
+    }, 0);
+  };
+
+  window.addEventListener("exercise:preview", (event) => {
+    const previewEvent = event as CustomEvent<{ exercise: unknown }>;
+    showPreviewOverlay(previewEvent.detail.exercise);
   });
-  btn25.addEventListener("click", () => runSession(25));
-  btn40.addEventListener("click", () => runSession(40));
 
-  const installBtn = document.getElementById("installBtn") as HTMLButtonElement;
+  renderStartScreen();
 
-  installBtn?.addEventListener("click", () => {
-    if (!installAvailable) return;
-    (window as any).triggerInstall?.();
+  window.addEventListener("workout:feedback", (e: any) => {
+    const value = e?.detail?.value as FeedbackRating | undefined;
+    if (!value) return;
+
+    const personalization = loadPersonalizationState();
+
+    // persist via existing helper (also updates bias, fatigue, etc.)
+    if (!lastSessionContext) return;
+
+    const updated = recordWorkoutFeedback(personalization, {
+      feedback: value,
+      duration: lastSessionContext.duration,
+      mode: lastSessionContext.mode,
+      style: resolveWorkoutStyle(lastSessionContext.constraints),
+      constraints: lastSessionContext.constraints,
+      session: lastSessionContext.session,
+    });
+    savePersonalizationState(updated);
+
+    // do not navigate away; keep user on completion screen
+
   });
 }
 
-console.log("RepDeck UI ready");
-preloadExerciseImages();
-// About screen renderer
-const showAbout = () => {
-  const output = document.getElementById("output") as HTMLDivElement;
-  if (!output) return;
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    const btn = document.getElementById("installBtn");
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
 
-  const overlay = document.createElement("div");
-  overlay.className = "about-overlay";
+    if (btn && standalone) {
+      btn.remove();
+    }
+  }, 100);
+});
 
-  overlay.innerHTML = `
-    <div class="about-card">
-      <div class="exercise-name">About</div>
-      <div class="meta">
-        RepDeck is built for the moments when routine breaks.<br/><br/>
-        No setup. No thinking.<br/>
-        Just show up and move.<br/><br/>
-        — A StillMind Labs creation
-      </div>
-      <button id="closeAbout">Close</button>
-    </div>
-  `;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredPrompt = event as unknown as NonNullable<typeof deferredPrompt>;
+  installAvailable = true;
 
-  document.body.appendChild(overlay);
+  const btn = document.getElementById("installBtn");
+  if (btn) {
+    btn.style.opacity = "0.9";
+    btn.style.display = "inline-block";
+  }
+});
 
-  const close = () => overlay.remove();
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
-  });
-  (overlay.querySelector("#closeAbout") as HTMLButtonElement).onclick = close;
+window.triggerInstall = async () => {
+  if (!deferredPrompt) return;
+
+  await deferredPrompt.prompt();
+  const choice = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+
+  if (choice.outcome === "accepted") {
+    setTimeout(() => {
+      document.getElementById("installBtn")?.remove();
+    }, 100);
+  }
 };
+
+window.addEventListener("appinstalled", () => {
+  setTimeout(() => {
+    document.getElementById("installBtn")?.remove();
+  }, 100);
+});
+
+preloadExerciseImages();
